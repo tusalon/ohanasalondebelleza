@@ -1,13 +1,18 @@
-﻿// admin-app.js - Panel de administración (VERSIÓN COMPLETA CON CALENDARIO OPTIMIZADO Y FILTROS)
-// CON BOTÓN DE NUEVA RESERVA MANUAL, CALENDARIO DE DISPONIBILIDAD Y VISTA CALENDARIO
+// admin-app.js - Panel de administración (VERSIÓN CORREGIDA CON HORARIOS POR DÍA)
+// CON BOTÓN DE NUEVA RESERVA MANUAL, CALENDARIO DE DISPONIBILIDAD
 
-console.log('🚀 ADMIN-APP.JS - Panel completo con Calendario Optimizado y Filtros');
+console.log('🚀 ADMIN-APP.JS - Panel de administración con Nueva Reserva y Calendario Disponibilidad');
 
 window.addEventListener('error', function(e) {
-    console.error('❌ Error detectado:', e.message);
+    console.error('❌ Error detectado, posible versión antigua:', e.message);
+    
     if (e.message.includes('Failed to load') || e.message.includes('Unexpected token')) {
+        console.log('🔄 Forzando recarga por posible versión antigua...');
+        
         if (window.swRegistration) {
-            window.swRegistration.unregister().then(() => window.location.reload());
+            window.swRegistration.unregister().then(() => {
+                window.location.reload();
+            });
         } else {
             window.location.reload();
         }
@@ -19,33 +24,65 @@ window.addEventListener('error', function(e) {
 // ============================================
 function getNegocioId() {
     const localId = localStorage.getItem('negocioId');
-    if (localId) return localId;
-    if (window.NEGOCIO_ID_POR_DEFECTO) return window.NEGOCIO_ID_POR_DEFECTO;
-    if (typeof window.getNegocioId === 'function') return window.getNegocioId();
+    if (localId) {
+        console.log('📌 AdminApp usando negocioId de localStorage:', localId);
+        return localId;
+    }
+    
+    if (window.NEGOCIO_ID_POR_DEFECTO) {
+        console.log('📌 AdminApp usando NEGOCIO_ID_POR_DEFECTO:', window.NEGOCIO_ID_POR_DEFECTO);
+        return window.NEGOCIO_ID_POR_DEFECTO;
+    }
+    
+    if (typeof window.getNegocioId === 'function') {
+        const id = window.getNegocioId();
+        console.log('📌 AdminApp usando window.getNegocioId():', id);
+        return id;
+    }
+    
+    console.error('❌ No se pudo obtener negocioId');
     return null;
 }
 
 // ============================================
 // FUNCIONES DE SUPABASE
 // ============================================
+
 async function getAllBookings() {
     try {
         const negocioId = getNegocioId();
-        if (!negocioId) return [];
+        console.log('🔍 getAllBookings - negocioId:', negocioId);
         
-        const url = `${window.SUPABASE_URL}/rest/v1/reservas?negocio_id=eq.${negocioId}&select=*&order=fecha.asc,hora_inicio.asc`;
+        if (!negocioId) {
+            console.error('❌ No hay negocioId disponible');
+            return [];
+        }
+        
+        console.log('📋 Obteniendo reservas para negocio:', negocioId);
+        
+        const url = `${window.SUPABASE_URL}/rest/v1/reservas?negocio_id=eq.${negocioId}&select=*&order=fecha.desc,hora_inicio.asc`;
+        console.log('🔗 URL de consulta:', url);
+        
         const res = await fetch(url, {
             headers: {
                 'apikey': window.SUPABASE_ANON_KEY,
                 'Authorization': `Bearer ${window.SUPABASE_ANON_KEY}`
             }
         });
-        if (!res.ok) return [];
+        
+        console.log('📡 Status de respuesta:', res.status);
+        
+        if (!res.ok) {
+            const errorText = await res.text();
+            console.error('❌ Error en respuesta:', errorText);
+            return [];
+        }
+        
         const data = await res.json();
         console.log('✅ Reservas obtenidas:', data.length);
         return Array.isArray(data) ? data : [];
     } catch (error) {
-        console.error('Error fetching bookings:', error);
+        console.error('❌ Error fetching bookings:', error);
         return [];
     }
 }
@@ -53,6 +90,13 @@ async function getAllBookings() {
 async function cancelBooking(id) {
     try {
         const negocioId = getNegocioId();
+        if (!negocioId) {
+            console.error('❌ No hay negocioId disponible');
+            return false;
+        }
+        
+        console.log(`🗑️ Cancelando reserva ${id} para negocio:`, negocioId);
+        
         const res = await fetch(
             `${window.SUPABASE_URL}/rest/v1/reservas?negocio_id=eq.${negocioId}&id=eq.${id}`,
             {
@@ -65,7 +109,13 @@ async function cancelBooking(id) {
                 body: JSON.stringify({ estado: 'Cancelado' })
             }
         );
-        return res.ok;
+        
+        if (!res.ok) {
+            console.error('Error al cancelar:', await res.text());
+            return false;
+        }
+        
+        return true;
     } catch (error) {
         console.error('Error cancel booking:', error);
         return false;
@@ -75,21 +125,42 @@ async function cancelBooking(id) {
 async function createBooking(bookingData) {
     try {
         const negocioId = getNegocioId();
-        const dataWithNegocio = { ...bookingData, negocio_id: negocioId };
-        const res = await fetch(`${window.SUPABASE_URL}/rest/v1/reservas`, {
-            method: 'POST',
-            headers: {
-                'apikey': window.SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${window.SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation'
-            },
-            body: JSON.stringify(dataWithNegocio)
-        });
-        if (!res.ok) return { success: false, error: await res.text() };
+        if (!negocioId) {
+            console.error('❌ No hay negocioId disponible');
+            return { success: false, error: 'No hay negocioId' };
+        }
+        
+        const dataWithNegocio = {
+            ...bookingData,
+            negocio_id: negocioId
+        };
+        
+        console.log('📤 Creando reserva para negocio:', negocioId, dataWithNegocio);
+        
+        const res = await fetch(
+            `${window.SUPABASE_URL}/rest/v1/reservas`,
+            {
+                method: 'POST',
+                headers: {
+                    'apikey': window.SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${window.SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify(dataWithNegocio)
+            }
+        );
+        
+        if (!res.ok) {
+            const error = await res.text();
+            console.error('Error al crear reserva:', error);
+            return { success: false, error };
+        }
+        
         const data = await res.json();
         return { success: true, data: Array.isArray(data) ? data[0] : data };
     } catch (error) {
+        console.error('Error creating booking:', error);
         return { success: false, error: error.message };
     }
 }
@@ -100,37 +171,90 @@ async function createBooking(bookingData) {
 async function marcarTurnosCompletados() {
     try {
         const negocioId = getNegocioId();
-        if (!negocioId) return;
+        if (!negocioId) {
+            console.error('❌ No hay negocioId disponible');
+            return;
+        }
+        
         const ahora = new Date();
-        const hoy = `${ahora.getFullYear()}-${(ahora.getMonth()+1).toString().padStart(2,'0')}-${ahora.getDate().toString().padStart(2,'0')}`;
+        const año = ahora.getFullYear();
+        const mes = (ahora.getMonth() + 1).toString().padStart(2, '0');
+        const dia = ahora.getDate().toString().padStart(2, '0');
+        const hoy = `${año}-${mes}-${dia}`;
+        
         const horaActual = ahora.getHours();
         const minutosActuales = ahora.getMinutes();
         const totalMinutosActual = horaActual * 60 + minutosActuales;
-
+        
+        console.log('⏰ Verificando turnos para marcar como completados...');
+        console.log('📅 Fecha LOCAL actual:', hoy);
+        console.log('🕐 Hora LOCAL actual:', `${horaActual}:${minutosActuales}`);
+        
         const responsePasados = await fetch(
-            `${window.SUPABASE_URL}/rest/v1/reservas?negocio_id=eq.${negocioId}&estado=eq.Reservado&fecha=lt.${hoy}`,
-            { headers: { 'apikey': window.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${window.SUPABASE_ANON_KEY}` } }
+            `${window.SUPABASE_URL}/rest/v1/reservas?negocio_id=eq.${negocioId}&estado=eq.Reservado&fecha=lt.${hoy}&select=id,fecha,hora_inicio,hora_fin,cliente_nombre,servicio,profesional_nombre`,
+            {
+                headers: {
+                    'apikey': window.SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${window.SUPABASE_ANON_KEY}`
+                }
+            }
         );
+        
+        if (!responsePasados.ok) {
+            console.error('Error al buscar turnos pasados para completar');
+            return;
+        }
+        
         const turnosPasados = await responsePasados.json();
-
+        
         const responseHoy = await fetch(
-            `${window.SUPABASE_URL}/rest/v1/reservas?negocio_id=eq.${negocioId}&estado=eq.Reservado&fecha=eq.${hoy}`,
-            { headers: { 'apikey': window.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${window.SUPABASE_ANON_KEY}` } }
+            `${window.SUPABASE_URL}/rest/v1/reservas?negocio_id=eq.${negocioId}&estado=eq.Reservado&fecha=eq.${hoy}&select=id,fecha,hora_inicio,hora_fin,cliente_nombre,servicio,profesional_nombre`,
+            {
+                headers: {
+                    'apikey': window.SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${window.SUPABASE_ANON_KEY}`
+                }
+            }
         );
+        
         const turnosHoy = responseHoy.ok ? await responseHoy.json() : [];
+        
         const turnosHoyTerminados = turnosHoy.filter(turno => {
             const [horas, minutos] = turno.hora_fin.split(':').map(Number);
-            return (horas * 60 + minutos) <= totalMinutosActual;
+            const totalMinutosFin = horas * 60 + minutos;
+            return totalMinutosFin <= totalMinutosActual;
         });
+        
+        console.log(`📊 Turnos de días pasados (fecha < ${hoy}): ${turnosPasados.length}`);
+        console.log(`📊 Turnos de hoy terminados: ${turnosHoyTerminados.length}`);
+        
         const turnosACompletar = [...turnosPasados, ...turnosHoyTerminados];
         
-        for (const turno of turnosACompletar) {
-            await fetch(`${window.SUPABASE_URL}/rest/v1/reservas?negocio_id=eq.${negocioId}&id=eq.${turno.id}`, {
-                method: 'PATCH',
-                headers: { 'apikey': window.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${window.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ estado: 'Completado' })
-            });
+        if (turnosACompletar.length > 0) {
+            console.log(`✅ ${turnosACompletar.length} turnos a marcar como completados`);
+            
+            for (const turno of turnosACompletar) {
+                console.log(`📝 Completando turno de ${turno.cliente_nombre} - ${turno.fecha} ${turno.hora_inicio} a ${turno.hora_fin}`);
+                
+                await fetch(
+                    `${window.SUPABASE_URL}/rest/v1/reservas?negocio_id=eq.${negocioId}&id=eq.${turno.id}`,
+                    {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': window.SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${window.SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ estado: 'Completado' })
+                    }
+                );
+            }
+            
+            console.log(`✅ ${turnosACompletar.length} turnos marcados como completados`);
+        } else {
+            console.log('⏰ No hay turnos para completar');
         }
+        
     } catch (error) {
         console.error('Error marcando turnos completados:', error);
     }
@@ -139,321 +263,43 @@ async function marcarTurnosCompletados() {
 // ============================================
 // FUNCIONES AUXILIARES
 // ============================================
-const timeToMinutes = (time) => { const [h,m] = time.split(':').map(Number); return h*60+m; };
-const formatTo12Hour = (time) => { const [h,m] = time.split(':'); const hour = parseInt(h); const ampm = hour>=12?'PM':'AM'; const h12 = hour%12||12; return `${h12}:${m} ${ampm}`; };
-const calculateEndTime = (startTime, duration) => { const [h,m] = startTime.split(':').map(Number); const total = h*60+m+duration; return `${Math.floor(total/60).toString().padStart(2,'0')}:${(total%60).toString().padStart(2,'0')}`; };
-const getCurrentLocalDate = () => { const ahora = new Date(); return `${ahora.getFullYear()}-${(ahora.getMonth()+1).toString().padStart(2,'0')}-${ahora.getDate().toString().padStart(2,'0')}`; };
-const indiceToHoraLegible = (indice) => { const horas = Math.floor(indice/2); const minutos = indice%2===0?'00':'30'; return `${horas.toString().padStart(2,'0')}:${minutos}`; };
+const timeToMinutes = (time) => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+};
+
+const formatTo12Hour = (time) => {
+    const [hours, minutes] = time.split(':');
+    const h = parseInt(hours);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${h12}:${minutes} ${ampm}`;
+};
+
+const calculateEndTime = (startTime, duration) => {
+    const [hours, minutes] = startTime.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes + duration;
+    const endHours = Math.floor(totalMinutes / 60);
+    const endMinutes = totalMinutes % 60;
+    return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+};
+
+const getCurrentLocalDate = () => {
+    const ahora = new Date();
+    const year = ahora.getFullYear();
+    const month = (ahora.getMonth() + 1).toString().padStart(2, '0');
+    const day = ahora.getDate().toString().padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const indiceToHoraLegible = (indice) => {
+    const horas = Math.floor(indice / 2);
+    const minutos = indice % 2 === 0 ? '00' : '30';
+    return `${horas.toString().padStart(2, '0')}:${minutos}`;
+};
 
 // ============================================
-// COMPONENTE AdminCalendar (VERSIÓN DEFINITIVA - NO SE PIERDE Y BLOQUEA DÍAS)
-// ============================================
-function AdminCalendar({ bookings, loading, onEventClick, onDateSelect, diasCerradosFechas = [], filtroProfesional = 'todos', filtroServicio = 'todos', profesionalesList = [], serviciosList = [] }) {
-    const calendarRef = React.useRef(null);
-    const calendarApiRef = React.useRef(null);
-    const [eventosCargados, setEventosCargados] = React.useState(false);
-    const [diasNoLaborables, setDiasNoLaborables] = React.useState([]);
-    const [horariosPorDia, setHorariosPorDia] = React.useState({});
-
-    // Cargar horarios del profesional para saber qué días trabaja
-    React.useEffect(() => {
-        const cargarHorariosProfesional = async () => {
-            if (filtroProfesional === 'todos' || !profesionalesList.length) {
-                setDiasNoLaborables([]);
-                setHorariosPorDia({});
-                return;
-            }
-            
-            const profesional = profesionalesList.find(p => p.id == filtroProfesional);
-            if (!profesional) return;
-            
-            try {
-                const horarios = await window.salonConfig.getHorariosProfesional(profesional.id);
-                const horariosPorDiaObj = horarios.horariosPorDia || {};
-                setHorariosPorDia(horariosPorDiaObj);
-                
-                // Determinar qué días NO trabaja (sin horarios configurados)
-                const diasSemana = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
-                const noTrabaja = diasSemana.filter(dia => !horariosPorDiaObj[dia] || horariosPorDiaObj[dia].length === 0);
-                setDiasNoLaborables(noTrabaja);
-                
-                console.log(`📅 Horarios de ${profesional.nombre}:`, horariosPorDiaObj);
-                console.log(`📅 Días que NO trabaja:`, noTrabaja);
-            } catch (error) {
-                console.error('Error cargando horarios:', error);
-            }
-        };
-        
-        cargarHorariosProfesional();
-    }, [filtroProfesional, profesionalesList]);
-
-    // Función para verificar si se puede crear cita en una fecha
-    const esFechaValidaParaCita = (fechaStr) => {
-        const hoy = getCurrentLocalDate();
-        
-        if (diasCerradosFechas.includes(fechaStr)) {
-            alert('❌ El local está cerrado este día.');
-            return false;
-        }
-        
-        if (fechaStr < hoy) {
-            alert('❌ No se pueden crear reservas en fechas pasadas');
-            return false;
-        }
-        
-        if (filtroProfesional !== 'todos') {
-            const fecha = new Date(fechaStr);
-            const diasSemana = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
-            const diaSemana = diasSemana[fecha.getDay()];
-            
-            if (diasNoLaborables.includes(diaSemana)) {
-                const profesional = profesionalesList.find(p => p.id == filtroProfesional);
-                alert(`❌ ${profesional?.nombre || 'El profesional'} no trabaja los ${diaSemana}s.`);
-                return false;
-            }
-        }
-        
-        return true;
-    };
-
-    // Inicializar calendario UNA SOLA VEZ
-    React.useEffect(() => {
-        if (!calendarRef.current || calendarApiRef.current) return;
-        
-        console.log('📅 INICIALIZANDO CALENDARIO (una sola vez)...');
-        
-        const cal = new FullCalendar.Calendar(calendarRef.current, {
-            locale: 'es',
-            initialView: 'timeGridWeek',
-            headerToolbar: {
-                left: 'prev,next today',
-                center: 'title',
-                right: 'dayGridMonth,timeGridWeek,timeGridDay'
-            },
-            editable: false,
-            eventClick: (info) => {
-                onEventClick(info.event);
-            },
-            dateClick: (info) => {
-                const fechaStr = info.dateStr.split('T')[0];
-                if (esFechaValidaParaCita(fechaStr)) {
-                    onDateSelect(info.dateStr);
-                }
-            },
-            height: 500,
-            slotMinTime: '08:00:00',
-            slotMaxTime: '16:00:00',
-            allDaySlot: false,
-            nowIndicator: true,
-            slotDuration: '00:30:00',
-            slotLabelInterval: '01:00',
-            lazyFetching: true,
-            dayMaxEvents: 3,
-            dayCellClassNames: (arg) => {
-                const fechaStr = arg.date.toISOString().split('T')[0];
-                const fecha = arg.date;
-                const diasSemana = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
-                const diaSemana = diasSemana[fecha.getDay()];
-                
-                if (diasCerradosFechas.includes(fechaStr)) {
-                    return ['dia-cerrado'];
-                }
-                if (filtroProfesional !== 'todos' && diasNoLaborables.includes(diaSemana)) {
-                    return ['dia-no-laborable'];
-                }
-                return [];
-            }
-        });
-        
-        cal.render();
-        calendarApiRef.current = cal;
-        console.log('✅ Calendario inicializado');
-        
-        return () => {
-            if (calendarApiRef.current) {
-                calendarApiRef.current.destroy();
-                calendarApiRef.current = null;
-            }
-        };
-    }, []);
-
-    // Actualizar eventos cuando cambian las reservas
-    React.useEffect(() => {
-        if (!calendarApiRef.current) return;
-        
-        console.log('🔄 Actualizando eventos del calendario - Reservas:', bookings.length);
-        
-        let reservasActivas = bookings.filter(b => 
-            b.estado === 'Reservado' || b.estado === 'Pendiente'
-        );
-        
-        if (filtroProfesional !== 'todos') {
-            reservasActivas = reservasActivas.filter(b => 
-                b.profesional_id == filtroProfesional || 
-                b.profesional_nombre === filtroProfesional ||
-                (b.trabajador_nombre && b.trabajador_nombre === filtroProfesional)
-            );
-        }
-        
-        if (filtroServicio !== 'todos') {
-            reservasActivas = reservasActivas.filter(b => 
-                b.servicio === filtroServicio
-            );
-        }
-        
-        const events = reservasActivas.map(booking => {
-            let backgroundColor = '#10B981';
-            if (booking.estado === 'Pendiente') backgroundColor = '#F59E0B';
-            
-            const profesional = booking.profesional_nombre || booking.trabajador_nombre || 'No asignado';
-            
-            return {
-                id: String(booking.id),
-                title: `${booking.servicio} - ${booking.cliente_nombre}`,
-                start: `${booking.fecha}T${booking.hora_inicio}`,
-                end: `${booking.fecha}T${booking.hora_fin}`,
-                backgroundColor: backgroundColor,
-                borderColor: backgroundColor,
-                extendedProps: {
-                    cliente_nombre: booking.cliente_nombre,
-                    cliente_whatsapp: booking.cliente_whatsapp,
-                    servicio: booking.servicio,
-                    profesional_nombre: profesional,
-                    profesional_id: booking.profesional_id,
-                    estado: booking.estado,
-                    fecha: booking.fecha,
-                    hora_inicio: booking.hora_inicio,
-                    hora_fin: booking.hora_fin,
-                    id: booking.id
-                }
-            };
-        });
-        
-        calendarApiRef.current.removeAllEvents();
-        if (events.length > 0) {
-            calendarApiRef.current.addEventSource(events);
-        }
-        
-        setEventosCargados(true);
-        
-    }, [bookings, filtroProfesional, filtroServicio]);
-
-    // Actualizar estilos de días cuando cambian los días no laborables
-    React.useEffect(() => {
-        if (!calendarApiRef.current) return;
-        calendarApiRef.current.refetchEvents();
-        console.log('🔄 Calendario refrescado - Días no laborables actualizados');
-    }, [diasNoLaborables, diasCerradosFechas]);
-
-    // ELIMINAMOS EL RETURN TEMPRANO DE loading - USAMOS OVERLAY
-
-    return (
-        <div className="bg-white rounded-xl shadow-sm p-2 animate-fade-in relative">
-            {/* OVERLAY DE CARGA - Superpuesto sin destruir el calendario */}
-            {loading && (
-                <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center rounded-xl transition-all">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto shadow-sm"></div>
-                    <p className="text-pink-700 font-medium mt-3 text-sm bg-white/80 px-3 py-1 rounded-full shadow-sm">Actualizando reservas...</p>
-                </div>
-            )}
-
-            <div className="text-xs text-gray-400 text-center mb-2 flex justify-center gap-4 flex-wrap">
-                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-green-500"></div><span>Reservado</span></div>
-                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-yellow-500"></div><span>Pendiente</span></div>
-                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-red-400"></div><span>Día Cerrado (Local)</span></div>
-                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-gray-300"></div><span>No laborable (Profesional)</span></div>
-                {(filtroProfesional !== 'todos' || filtroServicio !== 'todos') && (
-                    <div className="flex items-center gap-1 ml-4">
-                        <span className="text-pink-500">🔍</span>
-                        <span className="text-pink-600">Filtros activos</span>
-                    </div>
-                )}
-            </div>
-            
-            <div ref={calendarRef} style={{ minHeight: '450px' }}></div>
-            
-            {!eventosCargados && bookings.length > 0 && !loading && (
-                <div className="text-center py-2 text-yellow-600 text-sm">Cargando eventos...</div>
-            )}
-        </div>
-    );
-} // ← ESTA LLAVE DE CIERRE ES LA QUE FALTABA
-// ============================================
-// COMPONENTE ListaDeReservas (Vista Lista Original)
-// ============================================
-function ListaDeReservas({ bookings, loading, filterDate, setFilterDate, statusFilter, setStatusFilter, handleCancel, confirmarPago, borrarCanceladas, formatTo12Hour, activasCount, pendientesCount, completadasCount, canceladasCount }) {
-    const getFilteredBookings = () => {
-        let filtradas = filterDate ? bookings.filter(b => b.fecha === filterDate) : [...bookings];
-        if (statusFilter === 'activas') return filtradas.filter(b => b.estado === 'Reservado');
-        if (statusFilter === 'pendientes') return filtradas.filter(b => b.estado === 'Pendiente');
-        if (statusFilter === 'completadas') return filtradas.filter(b => b.estado === 'Completado');
-        if (statusFilter === 'canceladas') return filtradas.filter(b => b.estado === 'Cancelado');
-        return filtradas;
-    };
-    
-    const filteredBookings = getFilteredBookings();
-
-    return (
-        <div className="space-y-3 animate-fade-in">
-            <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
-                <div className="flex flex-wrap gap-3 items-center">
-                    <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="border rounded-lg px-3 py-2 text-sm" />
-                    {filterDate && <button onClick={() => setFilterDate('')} className="text-pink-500 text-sm">Limpiar filtro</button>}
-                </div>
-                <div className="flex flex-wrap gap-2 items-center">
-                    <button onClick={() => setStatusFilter('activas')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'activas' ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700'}`}>Activas ({activasCount})</button>
-                    <button onClick={() => setStatusFilter('pendientes')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'pendientes' ? 'bg-yellow-500 text-white' : 'bg-gray-100 text-gray-700'}`}>Pendientes ({pendientesCount})</button>
-                    <button onClick={() => setStatusFilter('completadas')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'completadas' ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700'}`}>Completadas ({completadasCount})</button>
-                    <button onClick={() => setStatusFilter('canceladas')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'canceladas' ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700'}`}>Canceladas ({canceladasCount})</button>
-                    <button onClick={() => setStatusFilter('todas')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'todas' ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700'}`}>Todas ({bookings.length})</button>
-                    {statusFilter === 'canceladas' && <button onClick={borrarCanceladas} className="px-4 py-2 bg-red-700 text-white rounded-lg text-sm">🗑️ Borrar todas</button>}
-                </div>
-            </div>
-
-            {loading ? (
-                <div className="text-center py-12"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto"></div><p className="text-pink-500 mt-4">Cargando reservas...</p></div>
-            ) : filteredBookings.length === 0 ? (
-                <div className="text-center py-12 bg-white rounded-xl"><p className="text-gray-500">No hay reservas para mostrar</p></div>
-            ) : (
-                filteredBookings.map(b => (
-                    <div key={b.id} className={`bg-white p-4 rounded-xl shadow-sm border-l-4 ${
-                        b.estado === 'Reservado' ? 'border-l-pink-500' :
-                        b.estado === 'Pendiente' ? 'border-l-yellow-500' :
-                        b.estado === 'Completado' ? 'border-l-green-500' :
-                        'border-l-red-500'
-                    }`}>
-                        <div className="flex justify-between mb-2">
-                            <span className="font-semibold">{window.formatFechaCompleta ? window.formatFechaCompleta(b.fecha) : b.fecha}</span>
-                            <span className="text-sm bg-pink-100 text-pink-700 px-2 py-1 rounded-full">{formatTo12Hour(b.hora_inicio)}</span>
-                        </div>
-                        <div className="text-sm space-y-1">
-                            <p><span className="font-medium">👤 Cliente:</span> {b.cliente_nombre}</p>
-                            <p><span className="font-medium">📱 WhatsApp:</span> {b.cliente_whatsapp}</p>
-                            <p><span className="font-medium">💅 Servicio:</span> {b.servicio}</p>
-                            <p><span className="font-medium">👩‍🎨 Profesional:</span> {b.profesional_nombre || b.trabajador_nombre}</p>
-                        </div>
-                        <div className="flex justify-between items-center mt-3 pt-2 border-t">
-                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${b.estado === 'Reservado' ? 'bg-pink-100 text-pink-700' : b.estado === 'Pendiente' ? 'bg-yellow-100 text-yellow-700' : b.estado === 'Completado' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                {b.estado}
-                            </span>
-                            <div className="flex gap-2">
-                                {b.estado === 'Pendiente' && (
-                                    <button onClick={() => confirmarPago(b.id, b)} className="px-3 py-1 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600">✅ Confirmar pago</button>
-                                )}
-                                {b.estado === 'Reservado' && (
-                                    <button onClick={() => handleCancel(b.id, b)} className="px-3 py-1 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600">❌ Cancelar</button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                ))
-            )}
-        </div>
-    );
-}
-
-// ============================================
-// COMPONENTE PRINCIPAL AdminApp
+// COMPONENTE PRINCIPAL
 // ============================================
 function AdminApp() {
     const [bookings, setBookings] = React.useState([]);
@@ -471,16 +317,6 @@ function AdminApp() {
     const [configVersion, setConfigVersion] = React.useState(0);
     
     const [tabActivo, setTabActivo] = React.useState('reservas');
-    
-    // Vista persistente en localStorage
-    const [vistaReservas, setVistaReservas] = React.useState(() => {
-        const guardada = localStorage.getItem('vistaReservas');
-        return guardada === 'lista' ? 'lista' : 'calendario';
-    });
-    
-    // Filtros rápidos para el calendario
-    const [filtroProfesional, setFiltroProfesional] = React.useState('todos');
-    const [filtroServicio, setFiltroServicio] = React.useState('todos');
     
     const [showClientesRegistrados, setShowClientesRegistrados] = React.useState(false);
     const [clientesRegistrados, setClientesRegistrados] = React.useState([]);
@@ -513,11 +349,6 @@ function AdminApp() {
     const [currentDate, setCurrentDate] = React.useState(new Date());
     const [diasLaborales, setDiasLaborales] = React.useState([]);
     const [fechasConHorarios, setFechasConHorarios] = React.useState({});
-
-    // Guardar vista seleccionada en localStorage
-    React.useEffect(() => {
-        localStorage.setItem('vistaReservas', vistaReservas);
-    }, [vistaReservas]);
 
     // ============================================
     // FUNCIÓN PARA CARGAR DÍAS CERRADOS DIRECTAMENTE DE SUPABASE
@@ -655,9 +486,13 @@ function AdminApp() {
                 const servicio = serviciosList.find(s => s.nombre === nuevaReservaData.servicio);
                 if (!servicio) return;
 
+                // OBTENER HORARIOS DEL PROFESIONAL
                 const horarios = await window.salonConfig.getHorariosProfesional(nuevaReservaData.profesional_id);
+                
+                // USAR horariosPorDia en lugar de horas (lista plana)
                 const horariosPorDia = horarios.horariosPorDia || {};
                 
+                // 🔥 CORREGIDO: Forzar fecha en hora local (sin UTC)
                 const partes = nuevaReservaData.fecha.split('-');
                 const año = parseInt(partes[0]);
                 const mes = parseInt(partes[1]) - 1;
@@ -667,6 +502,7 @@ function AdminApp() {
                 const diasSemana = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
                 let diaSemana = diasSemana[fechaSeleccionada.getDay()];
                 
+                // Normalizar: eliminar acentos para comparar con la BD
                 const normalizarDia = (dia) => {
                     return dia.toLowerCase()
                         .replace(/á/g, 'a')
@@ -678,15 +514,26 @@ function AdminApp() {
                 };
                 
                 diaSemana = normalizarDia(diaSemana);
+                
+                console.log(`📅 Fecha: ${nuevaReservaData.fecha}`);
+                console.log(`📅 Día normalizado: ${diaSemana}`);
+                console.log(`📋 Horarios configurados para este día:`, horariosPorDia[diaSemana] || []);
+                
+                // Obtener los índices de horario para el día específico
                 const indicesDelDia = horariosPorDia[diaSemana] || [];
                 
                 if (indicesDelDia.length === 0) {
+                    console.log(`⚠️ No hay horarios configurados para ${diaSemana}`);
                     setHorariosDisponibles([]);
                     return;
                 }
                 
+                // Convertir índices a horas legibles
                 const slotsTrabajo = indicesDelDia.map(indice => indiceToHoraLegible(indice));
                 
+                console.log(`📋 Slots base para ${diaSemana}:`, slotsTrabajo);
+                
+                // Obtener reservas existentes
                 const response = await fetch(
                     `${window.SUPABASE_URL}/rest/v1/reservas?fecha=eq.${nuevaReservaData.fecha}&profesional_id=eq.${nuevaReservaData.profesional_id}&estado=neq.Cancelado&select=hora_inicio,hora_fin`,
                     {
@@ -708,6 +555,7 @@ function AdminApp() {
                 const hoy = getCurrentLocalDate();
                 const esHoy = nuevaReservaData.fecha === hoy;
 
+                // Filtrar horarios disponibles
                 const disponibles = slotsTrabajo.filter(slot => {
                     const [horas, minutos] = slot.split(':').map(Number);
                     const slotStart = horas * 60 + minutos;
@@ -732,6 +580,7 @@ function AdminApp() {
                     return (hA * 60 + mA) - (hB * 60 + mB);
                 });
 
+                console.log(`🎯 Horarios disponibles para ${diaSemana}:`, disponibles);
                 setHorariosDisponibles(disponibles);
 
             } catch (error) {
@@ -839,6 +688,11 @@ function AdminApp() {
             const horasTrabajo = horarios.horas || [];
             const diasTrabajo = horarios.dias || [];
             const horariosPorDia = horarios.horariosPorDia || {};
+            
+            console.log('=========================================');
+            console.log(`📊 Profesional ID: ${profesionalId}`);
+            console.log(`📊 Horarios por día:`, horariosPorDia);
+            console.log('=========================================');
             
             const profesionalObj = profesionalesList.find(p => p.id === profesionalId);
             const fechasLibresPersonales = profesionalObj?.fechas_libres || [];
@@ -1003,6 +857,7 @@ function AdminApp() {
             return false;
         }
         
+        // 🔥 CORREGIDO: Usar fecha local para el día de semana
         const fechaLocal = new Date(date.getFullYear(), date.getMonth(), date.getDate());
         const diasSemana = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
         const diaSemana = diasSemana[fechaLocal.getDay()];
@@ -1388,36 +1243,6 @@ Cualquier cambio, podés cancelarlo desde la app con hasta 1 hora de anticipaci�
             console.log('🚪 Sesión cerrada, redirigiendo a index.html');
             window.location.href = 'index.html';
         }
-    };
-
-    // ============================================
-    // NUEVAS FUNCIONES PARA EL CALENDARIO DE RESERVAS
-    // ============================================
-    const handleCalendarEventClick = (event) => {
-        const data = event.extendedProps;
-        const action = confirm(`📅 *Reserva de ${data.cliente_nombre}*\n\n💅 Servicio: ${data.servicio}\n👤 Profesional: ${data.profesional_nombre}\n📅 Fecha: ${window.formatFechaCompleta ? window.formatFechaCompleta(data.fecha) : data.fecha}\n⏰ Hora: ${formatTo12Hour(data.hora_inicio)}\n💰 Estado: ${data.estado}\n\n¿Qué deseas hacer?\n✅ OK = Confirmar pago (si está pendiente)\n❌ Cancelar = Cancelar turno`);
-        if (action) {
-            if (data.estado === 'Pendiente') confirmarPago(event.id, data);
-            else handleCancel(event.id, data);
-        }
-    };
-
-    const handleCalendarDateSelect = (dateStr) => {
-        const fechaSeleccionada = dateStr.split('T')[0];
-        const hoy = getCurrentLocalDate();
-        
-        if (fechaSeleccionada < hoy) {
-            alert('❌ No se pueden crear reservas en fechas pasadas');
-            return;
-        }
-        
-        if (diasCerradosFechas.includes(fechaSeleccionada)) {
-            alert('❌ El local está cerrado este día. No se pueden crear reservas.');
-            return;
-        }
-        
-        setNuevaReservaData({ ...nuevaReservaData, fecha: fechaSeleccionada });
-        setShowNuevaReservaModal(true);
     };
 
     // ============================================
@@ -1813,100 +1638,74 @@ Cualquier cambio, podés cancelarlo desde la app con hasta 1 hora de anticipaci�
                     </div>
                 )}
 
-                {/* RESERVAS - con toggle entre Calendario y Lista */}
+                {/* RESERVAS */}
                 {tabActivo === 'reservas' && (
                     <>
                         {userRole === 'profesional' && profesional && (
                             <div className="bg-pink-50 border border-pink-200 rounded-lg p-4">
-                                <p className="text-pink-800 font-medium">Hola {profesional.nombre} 👋 - Mostrando tus reservas</p>
+                                <p className="text-pink-800 font-medium">Hola {profesional.nombre} 👋 - Mostrando tus reservas ({filteredBookings.length})</p>
                             </div>
                         )}
 
-                        {/* Toggle de vistas */}
-                        <div className="bg-white p-2 rounded-xl shadow-sm flex gap-2 w-fit">
-                            <button onClick={() => setVistaReservas('calendario')} className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${vistaReservas === 'calendario' ? 'bg-pink-500 text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-                                <span>📅</span>Vista Calendario
-                            </button>
-                            <button onClick={() => setVistaReservas('lista')} className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${vistaReservas === 'lista' ? 'bg-pink-500 text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-                                <span>📋</span>Vista Lista
-                            </button>
-                        </div>
+                        <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
+                            <div className="flex flex-wrap gap-3 items-center">
+                                <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="border rounded-lg px-3 py-2 text-sm" />
+                                {filterDate && <button onClick={() => setFilterDate('')} className="text-pink-500 text-sm">Limpiar filtro</button>}
+                            </div>
 
-                        {/* Filtros rápidos */}
-                        <div className="bg-white p-3 rounded-xl shadow-sm mb-4">
-                            <div className="flex flex-wrap gap-4 items-center">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium text-pink-600">👩‍🎨 Filtrar por profesional:</span>
-                                    <select 
-                                        value={filtroProfesional} 
-                                        onChange={(e) => setFiltroProfesional(e.target.value)}
-                                        className="border rounded-lg px-3 py-1.5 text-sm bg-white"
-                                    >
-                                        <option value="todos">Todos los profesionales</option>
-                                        {profesionalesList.map(p => (
-                                            <option key={p.id} value={p.id}>{p.nombre}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium text-pink-600">💅 Filtrar por servicio:</span>
-                                    <select 
-                                        value={filtroServicio} 
-                                        onChange={(e) => setFiltroServicio(e.target.value)}
-                                        className="border rounded-lg px-3 py-1.5 text-sm bg-white"
-                                    >
-                                        <option value="todos">Todos los servicios</option>
-                                        {serviciosList.map(s => (
-                                            <option key={s.id} value={s.nombre}>{s.nombre}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                
-                                {(filtroProfesional !== 'todos' || filtroServicio !== 'todos') && (
-                                    <button 
-                                        onClick={() => {
-                                            setFiltroProfesional('todos');
-                                            setFiltroServicio('todos');
-                                        }}
-                                        className="text-sm text-pink-500 hover:text-pink-700 underline"
-                                    >
-                                        Limpiar filtros
-                                    </button>
+                            <div className="flex flex-wrap gap-2 items-center">
+                                <button onClick={() => setStatusFilter('activas')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'activas' ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700'}`}>Activas ({activasCount})</button>
+                                <button onClick={() => setStatusFilter('pendientes')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'pendientes' ? 'bg-yellow-500 text-white' : 'bg-gray-100 text-gray-700'}`}>Pendientes ({pendientesCount})</button>
+                                <button onClick={() => setStatusFilter('completadas')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'completadas' ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700'}`}>Completadas ({completadasCount})</button>
+                                <button onClick={() => setStatusFilter('canceladas')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'canceladas' ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700'}`}>Canceladas ({canceladasCount})</button>
+                                <button onClick={() => setStatusFilter('todas')} className={`px-4 py-2 rounded-lg text-sm font-medium ${statusFilter === 'todas' ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700'}`}>Todas ({bookings.length})</button>
+                                {statusFilter === 'canceladas' && (
+                                    <button onClick={borrarCanceladas} className="px-4 py-2 bg-red-700 text-white rounded-lg text-sm">🗑️ Borrar todas</button>
                                 )}
                             </div>
                         </div>
 
-                        {vistaReservas === 'calendario' ? (
-                            <AdminCalendar 
-                                key="calendario"
-                                bookings={bookings} 
-                                loading={loading} 
-                                onEventClick={handleCalendarEventClick} 
-                                onDateSelect={handleCalendarDateSelect}
-                                diasCerradosFechas={diasCerradosFechas}
-                                filtroProfesional={filtroProfesional}
-                                filtroServicio={filtroServicio}
-                                profesionalesList={profesionalesList}
-                                serviciosList={serviciosList}
-                            />
+                        {loading ? (
+                            <div className="text-center py-12"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto"></div><p className="text-pink-500 mt-4">Cargando reservas...</p></div>
                         ) : (
-                            <ListaDeReservas 
-                                bookings={bookings} 
-                                loading={loading} 
-                                filterDate={filterDate} 
-                                setFilterDate={setFilterDate} 
-                                statusFilter={statusFilter} 
-                                setStatusFilter={setStatusFilter} 
-                                handleCancel={handleCancel} 
-                                confirmarPago={confirmarPago} 
-                                borrarCanceladas={borrarCanceladas} 
-                                formatTo12Hour={formatTo12Hour} 
-                                activasCount={activasCount} 
-                                pendientesCount={pendientesCount} 
-                                completadasCount={completadasCount} 
-                                canceladasCount={canceladasCount} 
-                            />
+                            <div className="space-y-3">
+                                {filteredBookings.length === 0 ? (
+                                    <div className="text-center py-12 bg-white rounded-xl"><p className="text-gray-500">No hay reservas para mostrar</p></div>
+                                ) : (
+                                    filteredBookings.map(b => (
+                                        <div key={b.id} className={`bg-white p-4 rounded-xl shadow-sm border-l-4 ${
+                                            b.estado === 'Reservado' ? 'border-l-pink-500' :
+                                            b.estado === 'Pendiente' ? 'border-l-yellow-500' :
+                                            b.estado === 'Completado' ? 'border-l-green-500' :
+                                            'border-l-red-500'
+                                        }`}>
+                                            <div className="flex justify-between mb-2">
+                                                <span className="font-semibold">{window.formatFechaCompleta ? window.formatFechaCompleta(b.fecha) : b.fecha}</span>
+                                                <span className="text-sm bg-pink-100 text-pink-700 px-2 py-1 rounded-full">{formatTo12Hour(b.hora_inicio)}</span>
+                                            </div>
+                                            <div className="text-sm space-y-1">
+                                                <p><span className="font-medium">👤 Cliente:</span> {b.cliente_nombre}</p>
+                                                <p><span className="font-medium">📱 WhatsApp:</span> {b.cliente_whatsapp}</p>
+                                                <p><span className="font-medium">💅 Servicio:</span> {b.servicio}</p>
+                                                <p><span className="font-medium">👩‍🎨 Profesional:</span> {b.profesional_nombre || b.trabajador_nombre}</p>
+                                            </div>
+                                            <div className="flex justify-between items-center mt-3 pt-2 border-t">
+                                                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${b.estado === 'Reservado' ? 'bg-pink-100 text-pink-700' : b.estado === 'Pendiente' ? 'bg-yellow-100 text-yellow-700' : b.estado === 'Completado' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                    {b.estado}
+                                                </span>
+                                                <div className="flex gap-2">
+                                                    {b.estado === 'Pendiente' && (
+                                                        <button onClick={() => confirmarPago(b.id, b)} className="px-3 py-1 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600">✅ Confirmar pago</button>
+                                                    )}
+                                                    {b.estado === 'Reservado' && (
+                                                        <button onClick={() => handleCancel(b.id, b)} className="px-3 py-1 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600">❌ Cancelar</button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
                         )}
                     </>
                 )}

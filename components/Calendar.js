@@ -1,11 +1,10 @@
-// components/Calendar.js - VERSIÓN CON DÍAS CERRADOS + DÍAS LIBRES DE PROFESIONAL
+// components/Calendar.js - VERSIÓN CON DÍAS CERRADOS
 
 function Calendar({ onDateSelect, selectedDate, profesional }) {
     const [currentDate, setCurrentDate] = React.useState(new Date());
     const [diasLaborales, setDiasLaborales] = React.useState([]);
     const [diasCerrados, setDiasCerrados] = React.useState([]);
     const [cargandoHorarios, setCargandoHorarios] = React.useState(false);
-    const [fechasLibresProfesional, setFechasLibresProfesional] = React.useState([]);
 
     React.useEffect(() => {
         if (!profesional) return;
@@ -20,19 +19,10 @@ function Calendar({ onDateSelect, selectedDate, profesional }) {
                 const diasCerradosList = await window.getDiasCerrados();
                 setDiasCerrados(diasCerradosList.map(d => d.fecha));
                 
-                // 🔥 NUEVO: Cargar días libres del profesional
-                if (profesional.fechas_libres) {
-                    console.log(`📅 Días libres de ${profesional.nombre}:`, profesional.fechas_libres);
-                    setFechasLibresProfesional(profesional.fechas_libres);
-                } else {
-                    setFechasLibresProfesional([]);
-                }
-                
             } catch (error) {
                 console.error('Error cargando disponibilidad:', error);
                 setDiasLaborales([]);
                 setDiasCerrados([]);
-                setFechasLibresProfesional([]);
             } finally {
                 setCargandoHorarios(false);
             }
@@ -101,15 +91,6 @@ function Calendar({ onDateSelect, selectedDate, profesional }) {
     const esDiaCerrado = (date) => {
         const fechaStr = formatDate(date);
         return diasCerrados.includes(fechaStr);
-    };
-
-    // 🔥 NUEVA FUNCIÓN: Verificar si el profesional tiene un día libre (vacaciones/descanso)
-    const esDiaLibreProfesional = (date) => {
-        if (!profesional) return false;
-        if (!fechasLibresProfesional || fechasLibresProfesional.length === 0) return false;
-        
-        const fechaStr = formatDate(date);
-        return fechasLibresProfesional.includes(fechaStr);
     };
 
     const nextMonth = () => {
@@ -224,10 +205,8 @@ function Calendar({ onDateSelect, selectedDate, profesional }) {
                             
                             const profesionalTrabaja = profesionalTrabajaEsteDia(date);
                             const cerrado = esDiaCerrado(date);
-                            const diaLibreProfesional = esDiaLibreProfesional(date); // 🔥 NUEVO
                             
-                            // 🔥 MODIFICADO: Incluir verificación de días libres del profesional
-                            const available = !past && profesionalTrabaja && !cerrado && !diaLibreProfesional;
+                            const available = !past && profesionalTrabaja && !cerrado;
                             
                             let className = "h-10 w-full flex items-center justify-center rounded-lg text-sm font-medium transition-all relative";
                             
@@ -242,8 +221,6 @@ function Calendar({ onDateSelect, selectedDate, profesional }) {
                             let title = "";
                             if (cerrado) {
                                 title = "🚫 Día cerrado (feriado/vacaciones)";
-                            } else if (diaLibreProfesional) {
-                                title = `✈️ ${profesional?.nombre} no trabaja este día (día libre/vacaciones)`;
                             } else if (past && dateStr === getTodayLocalString()) {
                                 title = "Hoy ya no hay horarios disponibles";
                             } else if (past) {
@@ -268,10 +245,7 @@ function Calendar({ onDateSelect, selectedDate, profesional }) {
                                     {cerrado && (
                                         <span className="absolute top-0 right-0 text-[10px] text-red-500">🚫</span>
                                     )}
-                                    {diaLibreProfesional && !cerrado && (
-                                        <span className="absolute top-0 right-0 text-[10px] text-orange-500">✈️</span>
-                                    )}
-                                    {available && !selected && !cerrado && !diaLibreProfesional && (
+                                    {available && !selected && !cerrado && (
                                         <span className="absolute bottom-0.5 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-pink-400 rounded-full"></span>
                                     )}
                                 </button>
@@ -292,33 +266,22 @@ function Calendar({ onDateSelect, selectedDate, profesional }) {
                                 : 'Todos los días (sin configuración específica)'}
                         </span>
                     </div>
-                    {fechasLibresProfesional.length > 0 && (
-                        <div className="flex items-center gap-2 mt-2">
-                            <span className="text-orange-500 text-lg">✈️</span>
-                            <span>
-                                <strong>Días libres de {profesional.nombre}:</strong>{' '}
-                                {fechasLibresProfesional.length} día(s) no disponible(s) por vacaciones/descanso
-                            </span>
-                        </div>
-                    )}
                     {diasCerrados.length > 0 && (
                         <div className="flex items-center gap-2 mt-2">
                             <span className="text-red-400 text-lg">🚫</span>
                             <span>
-                                <strong>Días cerrados del local:</strong>{' '}
+                                <strong>Días cerrados:</strong>{' '}
                                 {diasCerrados.length} día(s) no disponible(s)
                             </span>
                         </div>
                     )}
-                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <div className="flex items-center gap-2 mt-2">
                         <span className="w-3 h-3 bg-pink-500 rounded-full"></span>
                         <span>Disponible</span>
                         <span className="w-3 h-3 bg-pink-200 rounded-full ml-3"></span>
-                        <span>No disponible (día no laboral)</span>
-                        <span className="w-3 h-3 bg-orange-300 rounded-full ml-3"></span>
-                        <span>Día libre/vacaciones</span>
+                        <span>No disponible</span>
                         <span className="w-3 h-3 bg-red-300 rounded-full ml-3"></span>
-                        <span>Local cerrado</span>
+                        <span>Día cerrado</span>
                     </div>
                 </div>
             )}
