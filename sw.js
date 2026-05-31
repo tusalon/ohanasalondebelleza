@@ -1,6 +1,6 @@
 // sw.js - Service Worker para Ohana.salon_de_belleza 
 
-const CACHE_NAME = 'ohanasalondebelleza-v29';
+const CACHE_NAME = 'ohanasalondebelleza-v47';
 const urlsToCache = [
   '/ohanasalondebelleza/',
   '/ohanasalondebelleza/index.html',
@@ -17,7 +17,14 @@ const urlsToCache = [
   '/ohanasalondebelleza/icons/icon-152x152.png',
   '/ohanasalondebelleza/icons/icon-192x192.png',
   '/ohanasalondebelleza/icons/icon-384x384.png',
-  '/ohanasalondebelleza/icons/icon-512x512.png'
+  '/ohanasalondebelleza/icons/icon-512x512.png',
+  '/ohanasalondebelleza/vendor/react.production.min.js',
+  '/ohanasalondebelleza/vendor/react-dom.production.min.js',
+  '/ohanasalondebelleza/vendor/babel.min.js',
+  '/ohanasalondebelleza/vendor/bcrypt.min.js',
+  '/ohanasalondebelleza/vendor/tailwind-browser.js',
+  '/ohanasalondebelleza/vendor/lucide/lucide.css',
+  '/ohanasalondebelleza/vendor/lucide/lucide.woff2'
 ];
 
 // ============================================
