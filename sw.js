@@ -1,6 +1,6 @@
 // sw.js - Service Worker para Ohana.salon_de_belleza 
 
-const CACHE_NAME = 'ohanasalondebelleza-v49';
+const CACHE_NAME = 'ohanasalondebelleza-v50';
 const urlsToCache = [
   '/ohanasalondebelleza/',
   '/ohanasalondebelleza/index.html',
